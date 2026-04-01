@@ -4,7 +4,8 @@ import Peer from 'peerjs';
 import { Send, Video, Phone, MonitorUp, VideoOff, MicOff, Users } from 'lucide-react';
 import './App.css';
 
-const socket = io('https://ghost-chat-server.onrender.com', {
+// Change this line to your NEW Render link:
+const socket = io('https://your-new-render-link.onrender.com', {
   transports: ['websocket', 'polling']
 });
 
