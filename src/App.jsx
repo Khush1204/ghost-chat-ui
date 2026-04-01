@@ -92,7 +92,7 @@ function App() {
   const peer = new Peer({
   host: 'ghost-chat-server.onrender.com',
   port: 443,
-  path: '/peer-engine', // Match the name we used in app.use
+  path: '/', // <--- Match the backend root
   secure: true,
   config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 });
