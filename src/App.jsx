@@ -1,15 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Peer from 'peerjs';
-import { Send, Video, Phone, MonitorUp, Paperclip, Sticker, User, VideoOff, MicOff, Check, CheckCheck } from 'lucide-react';
+import { Send, Video, Phone, MonitorUp, Paperclip, VideoOff, MicOff, Users } from 'lucide-react';
 import './App.css';
 
-// CONNECT TO YOUR LIVE RENDER SERVER
 const socket = io('https://ghost-chat-server.onrender.com', {
   transports: ['websocket', 'polling']
 });
-
-const STICKERS = ['🚀', '👻', '💀', '👽', '🍕', '🎉', '🔥', '💯'];
 
 const RemoteVideoPlayer = ({ stream, name }) => {
   const videoRef = useRef(null);
@@ -30,49 +27,35 @@ function App() {
   const [userName, setUserName] = useState('');
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
-  const [showStickers, setShowStickers] = useState(false);
   const [mediaStreamed, setMediaStreamed] = useState(false); 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [myPeerId, setMyPeerId] = useState('');
   const [peers, setPeers] = useState({}); 
 
   const myVideoRef = useRef();
   const myStreamRef = useRef(null);
   const peerInstance = useRef(null);
-  const callsRef = useRef({}); 
-  const connsRef = useRef({});
+  const callsRef = useRef({});
 
-  // --- SOCKET LISTENERS ---
+  // --- SOCKET LISTENERS FOR MESSAGES & JOINS ---
   useEffect(() => {
     socket.on('user-joined', (data) => {
       setMessages(prev => [...prev, { type: 'system', text: `${data.senderName} joined the room!` }]);
       setPeers(prev => ({ ...prev, [data.peerId]: { stream: null, name: data.senderName } }));
-      
-      // Auto-connect data for files
-      if (peerInstance.current) {
-        const conn = peerInstance.current.connect(data.peerId);
-        setupConnection(conn);
-      }
     });
 
     socket.on('user-left', (data) => {
-      setMessages(p => [...p, { type: 'system', text: `${data.userName} has left.` }]);
-      setPeers(p => {
-        const updated = { ...p };
+      setMessages(prev => [...prev, { type: 'system', text: `${data.userName} has left.` }]);
+      setPeers(prev => {
+        const updated = { ...prev };
         delete updated[data.peerId];
         return updated;
       });
     });
 
     socket.on('receive-message', (data) => {
-      if (data.type === 'read-receipt') {
-        setMessages(p => p.map(m => m.id === data.messageId ? { ...m, status: 'read' } : m));
-      } else {
-        setMessages(p => [...p, { ...data, isMine: false }]);
-        socket.emit('send-message', { roomId, type: 'read-receipt', messageId: data.id });
-      }
+      setMessages(prev => [...prev, { ...data, isMine: false }]);
     });
 
     return () => {
@@ -80,31 +63,23 @@ function App() {
       socket.off('user-left');
       socket.off('receive-message');
     };
-  }, [roomId]);
+  }, []);
 
-  const setupConnection = (conn) => {
-    conn.on('open', () => {
-      connsRef.current[conn.peer] = conn;
-      conn.on('data', (data) => handleIncomingData(data, false));
+  const initMesh = () => {
+    // THIS EXACT PATH FIXES THE 404
+    const peer = new Peer({
+      host: 'ghost-chat-server.onrender.com',
+      port: 443,
+      path: '/peerjs', // Matches backend perfectly
+      secure: true,
+      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
     });
-  };
-
-  const peer = new Peer({
-  host: 'ghost-chat-server.onrender.com',
-  port: 443,
-  path: '/', // <--- Match the backend root
-  secure: true,
-  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-});
 
     peerInstance.current = peer;
 
     peer.on('open', (id) => {
-      setMyPeerId(id);
       socket.emit('join-room', { roomId, peerId: id, userName });
     });
-
-    peer.on('connection', (conn) => setupConnection(conn));
 
     peer.on('call', (call) => {
       call.answer(myStreamRef.current || undefined);
@@ -117,7 +92,7 @@ function App() {
 
   const joinRoom = (e) => {
     e.preventDefault();
-    if (!userName.trim() || !roomId.trim()) return alert("Enter details!");
+    if (!userName.trim() || !roomId.trim()) return;
     setInRoom(true);
     initMesh();
   };
@@ -139,36 +114,20 @@ function App() {
     } catch (e) { alert("Camera Permission Denied"); }
   };
 
-  const sendTextMessage = (e) => {
-    e.preventDefault();
-    if (!inputMessage.trim()) return;
-    const msg = { 
-      id: Math.random().toString(36).substr(2, 9),
-      roomId, 
-      text: inputMessage, 
-      type: 'text', 
-      senderName: userName, 
-      status: 'sent' 
-    };
-    socket.emit('send-message', msg);
-    setMessages(p => [...p, { ...msg, isMine: true }]);
-    setInputMessage('');
+  // --- NEW: TOGGLE VIDEO & AUDIO LOGIC ---
+  const toggleVideo = () => {
+    const videoTrack = myStreamRef.current?.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      setIsVideoOff(!videoTrack.enabled);
+    }
   };
 
-  const sendFile = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const data = { type: 'file', file, name: file.name, fileType: file.type, senderName: userName };
-    Object.values(connsRef.current).forEach(c => c.send(data));
-    handleIncomingData(data, true);
-  };
-
-  const handleIncomingData = (data, isMine) => {
-    if (data.type === 'file') {
-      const url = URL.createObjectURL(new Blob([data.file]));
-      setMessages(p => [...p, { ...data, url, isMine }]);
-    } else if (data.type === 'sticker') {
-      setMessages(p => [...p, { ...data, isMine }]);
+  const toggleAudio = () => {
+    const audioTrack = myStreamRef.current?.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setIsMuted(!audioTrack.enabled);
     }
   };
 
@@ -179,8 +138,9 @@ function App() {
         const track = stream.getVideoTracks()[0];
         Object.values(callsRef.current).forEach(call => {
           const sender = call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-          sender.replaceTrack(track);
+          if(sender) sender.replaceTrack(track);
         });
+        if (myVideoRef.current) myVideoRef.current.srcObject = stream;
         setIsScreenSharing(true);
         track.onended = () => stopScreenShare();
       } else { stopScreenShare(); }
@@ -192,9 +152,20 @@ function App() {
     const track = stream.getVideoTracks()[0];
     Object.values(callsRef.current).forEach(call => {
       const sender = call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-      sender.replaceTrack(track);
+      if(sender) sender.replaceTrack(track);
     });
+    if (myVideoRef.current) myVideoRef.current.srcObject = stream;
     setIsScreenSharing(false);
+    if(isVideoOff) track.enabled = false;
+  };
+
+  const sendTextMessage = (e) => {
+    e.preventDefault();
+    if (!inputMessage.trim()) return;
+    const msg = { roomId, text: inputMessage, type: 'text', senderName: userName };
+    socket.emit('send-message', msg);
+    setMessages(p => [...p, { ...msg, isMine: true }]);
+    setInputMessage('');
   };
 
   if (!inRoom) return (
@@ -212,20 +183,43 @@ function App() {
 
   return (
     <div className="chat-layout">
+      {/* SIDEBAR */}
       <div className="media-sidebar active">
+        
+        {/* NEW: ACTIVE MEMBERS LIST */}
+        <div className="members-list">
+          <h3><Users size={16}/> Active in {roomId}</h3>
+          <ul>
+            <li className="you-badge">🟢 {userName} (You)</li>
+            {Object.values(peers).map((p, i) => (
+              <li key={i}>🟢 {p.name || "Connecting..."}</li>
+            ))}
+          </ul>
+        </div>
+
         <div className="video-stack">
           <div className="video-container self-view">
             {!mediaStreamed && <button onClick={turnOnMedia} className="primary-btn">Enable Camera</button>}
             <video ref={myVideoRef} autoPlay playsInline muted className="my-video mirrored" />
-            <span className="name-badge">{userName} (You)</span>
           </div>
           {Object.entries(peers).map(([id, d]) => d.stream && <RemoteVideoPlayer key={id} stream={d.stream} name={d.name} />)}
         </div>
+
+        {/* UPDATED: CONTROLS WITH CAMERA TOGGLE */}
         <div className="call-controls">
-          <button onClick={() => setIsMuted(!isMuted)} className={`control-btn ${isMuted ? 'danger' : ''}`}><MicOff size={20}/></button>
-          <button onClick={toggleScreenShare} className="control-btn"><MonitorUp size={20}/></button>
+          <button onClick={toggleAudio} className={`control-btn ${isMuted ? 'danger' : ''}`} disabled={!mediaStreamed}>
+            {isMuted ? <MicOff size={20}/> : <Phone size={20}/>}
+          </button>
+          <button onClick={toggleVideo} className={`control-btn ${isVideoOff ? 'danger' : ''}`} disabled={!mediaStreamed}>
+            {isVideoOff ? <VideoOff size={20}/> : <Video size={20}/>}
+          </button>
+          <button onClick={toggleScreenShare} className={`control-btn ${isScreenSharing ? 'active-share' : ''}`} disabled={!mediaStreamed}>
+            <MonitorUp size={20}/>
+          </button>
         </div>
       </div>
+
+      {/* CHAT MAIN */}
       <div className="chat-main">
         <div className="messages-area">
           {messages.map((m, i) => (
@@ -233,16 +227,13 @@ function App() {
               {m.type === 'system' ? m.text : (
                 <div className="bubble">
                   {!m.isMine && <small>{m.senderName}</small>}
-                  {m.type === 'text' ? <p>{m.text}</p> : <img src={m.url} className="chat-image" />}
-                  {m.isMine && m.status === 'read' && <CheckCheck size={14} className="receipt" />}
+                  <p>{m.text}</p>
                 </div>
               )}
             </div>
           ))}
         </div>
         <form onSubmit={sendTextMessage} className="compose-area">
-          <input type="file" id="f-up" hidden onChange={sendFile} />
-          <label htmlFor="f-up" className="icon-btn"><Paperclip size={20}/></label>
           <input type="text" className="chat-input" placeholder="Type..." value={inputMessage} onChange={e => setInputMessage(e.target.value)} />
           <button type="submit" className="send-btn"><Send size={20}/></button>
         </form>
