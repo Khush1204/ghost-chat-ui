@@ -89,14 +89,13 @@ function App() {
     });
   };
 
-  const initMesh = () => {
-    const peer = new Peer({
-      host: 'ghost-chat-server.onrender.com',
-      port: 443,
-      path: '/peerjs/myapp',
-      secure: true,
-      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-    });
+  const peer = new Peer({
+  host: 'ghost-chat-server.onrender.com',
+  port: 443,
+  path: '/peer-engine', // Match the name we used in app.use
+  secure: true,
+  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+});
 
     peerInstance.current = peer;
 
