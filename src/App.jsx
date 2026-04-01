@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Peer from 'peerjs';
-import { Send, Video, Phone, MonitorUp, Paperclip, VideoOff, MicOff, Users } from 'lucide-react';
+import { Send, Video, Phone, MonitorUp, VideoOff, MicOff, Users } from 'lucide-react';
 import './App.css';
 
 const socket = io('https://ghost-chat-server.onrender.com', {
@@ -38,7 +38,6 @@ function App() {
   const peerInstance = useRef(null);
   const callsRef = useRef({});
 
-  // --- SOCKET LISTENERS FOR MESSAGES & JOINS ---
   useEffect(() => {
     socket.on('user-joined', (data) => {
       setMessages(prev => [...prev, { type: 'system', text: `${data.senderName} joined the room!` }]);
@@ -66,19 +65,9 @@ function App() {
   }, []);
 
   const initMesh = () => {
-    // 💥 BYPASS THE 404: Use the global PeerJS cloud server instead!
     const peer = new Peer({
       config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
     });
-
-    peerInstance.current = peer;
-
-    peer.on('open', (id) => {
-      socket.emit('join-room', { roomId, peerId: id, userName });
-    });
-
-    // ... (keep the rest of your peer.on('call', ...) code exactly the same)
-  };
 
     peerInstance.current = peer;
 
@@ -119,7 +108,6 @@ function App() {
     } catch (e) { alert("Camera Permission Denied"); }
   };
 
-  // --- NEW: TOGGLE VIDEO & AUDIO LOGIC ---
   const toggleVideo = () => {
     const videoTrack = myStreamRef.current?.getVideoTracks()[0];
     if (videoTrack) {
@@ -188,10 +176,7 @@ function App() {
 
   return (
     <div className="chat-layout">
-      {/* SIDEBAR */}
       <div className="media-sidebar active">
-        
-        {/* NEW: ACTIVE MEMBERS LIST */}
         <div className="members-list">
           <h3><Users size={16}/> Active in {roomId}</h3>
           <ul>
@@ -210,7 +195,6 @@ function App() {
           {Object.entries(peers).map(([id, d]) => d.stream && <RemoteVideoPlayer key={id} stream={d.stream} name={d.name} />)}
         </div>
 
-        {/* UPDATED: CONTROLS WITH CAMERA TOGGLE */}
         <div className="call-controls">
           <button onClick={toggleAudio} className={`control-btn ${isMuted ? 'danger' : ''}`} disabled={!mediaStreamed}>
             {isMuted ? <MicOff size={20}/> : <Phone size={20}/>}
@@ -224,7 +208,6 @@ function App() {
         </div>
       </div>
 
-      {/* CHAT MAIN */}
       <div className="chat-main">
         <div className="messages-area">
           {messages.map((m, i) => (
@@ -248,4 +231,4 @@ function App() {
 }
 
 export default App;
-// FORCE VERCEL DEPLOYMENT 1
+// FORCE VERCEL DEPLOYMENT 2: CLEAN SYNTAX
