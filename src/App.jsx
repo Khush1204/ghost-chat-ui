@@ -66,14 +66,19 @@ function App() {
   }, []);
 
   const initMesh = () => {
-    // THIS EXACT PATH FIXES THE 404
+    // 💥 BYPASS THE 404: Use the global PeerJS cloud server instead!
     const peer = new Peer({
-      host: 'ghost-chat-server.onrender.com',
-      port: 443,
-      path: '/peerjs', // Matches backend perfectly
-      secure: true,
       config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
     });
+
+    peerInstance.current = peer;
+
+    peer.on('open', (id) => {
+      socket.emit('join-room', { roomId, peerId: id, userName });
+    });
+
+    // ... (keep the rest of your peer.on('call', ...) code exactly the same)
+  };
 
     peerInstance.current = peer;
 
