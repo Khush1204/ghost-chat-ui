@@ -5,7 +5,7 @@ import { Send, Video, Phone, MonitorUp, VideoOff, MicOff, Users } from 'lucide-r
 import './App.css';
 
 // Replace the placeholder with your REAL Render link:
-const socket = io('https://PUT-YOUR-REAL-LINK-HERE.onrender.com', {
+const socket = io('https://ghost-chat-backend-vkcz.onrender.com', {
   transports: ['websocket', 'polling']
 });
 
