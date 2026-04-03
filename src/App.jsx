@@ -8,119 +8,52 @@ const RENDER_URL = 'https://ghost-chat-backend-vkcz.onrender.com';
 
 function App() {
   const [mounted, setMounted] = useState(false);
-  const [inRoom, setInRoom] = useState(false);
-  const [roomId, setRoomId] = useState('');
-  const [userName, setUserName] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
   const [connStatus, setConnStatus] = useState({ server: false, peer: false });
-
   const socketRef = useRef(null);
-  const peerInstance = useRef(null);
 
+  // THIS IS THE KEY: useEffect only runs on the CLIENT
   useEffect(() => {
-    // 1. KILL ERROR #418: Only start logic once the browser is ready
     setMounted(true);
 
-    // 2. Initialize Socket inside useEffect to keep it out of the Pre-render
-    if (!socketRef.current) {
+    if (typeof window !== 'undefined' && !socketRef.current) {
       socketRef.current = io(RENDER_URL, {
         transports: ['websocket', 'polling'],
         withCredentials: true,
+        autoConnect: true
       });
 
-      // 3. FIX THE SCOPE: Attach it to window for your console commands
+      // Attach to window so your console command works!
       window.socket = socketRef.current;
+
+      socketRef.current.on('connect', () => {
+        setConnStatus(prev => ({ ...prev, server: true }));
+      });
+
+      socketRef.current.on('disconnect', () => {
+        setConnStatus(prev => ({ ...prev, server: false }));
+      });
     }
 
-    const socket = socketRef.current;
-
-    socket.on('connect', () => {
-      console.log("🟢 [DEBUG] Socket Connected!");
-      setConnStatus(prev => ({ ...prev, server: true }));
-    });
-
-    socket.on('disconnect', () => {
-      setConnStatus(prev => ({ ...prev, server: false }));
-    });
-
-    socket.on('receive-message', (data) => {
-      setMessages(prev => [...prev, { ...data, isMine: data.senderName === userName }]);
-    });
-
-    // Check initial state
-    if (socket.connected) setConnStatus(prev => ({ ...prev, server: true }));
-
     return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('receive-message');
+      if (socketRef.current) {
+        socketRef.current.off('connect');
+        socketRef.current.off('disconnect');
+      }
     };
-  }, [userName]);
+  }, []);
 
-  const joinRoom = (e) => {
-    e.preventDefault();
-    if (!userName.trim() || !roomId.trim()) return;
-    
-    setInRoom(true);
-    
-    // Initialize PeerJS only when joining
-    const peer = new Peer({
-      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-    });
-
-    peer.on('open', (id) => {
-      setConnStatus(prev => ({ ...prev, peer: true }));
-      socketRef.current.emit('join-room', { roomId, peerId: id, userName });
-    });
-
-    peerInstance.current = peer;
-  };
-
-  const sendTextMessage = (e) => {
-    e.preventDefault();
-    if (!inputMessage.trim()) return;
-    const msg = { roomId, text: inputMessage, senderName: userName };
-    socketRef.current.emit('send-message', msg);
-    setInputMessage('');
-  };
-
-  // 4. PREVENT HYDRATION CRASH: Return null until mounted
+  // If we aren't mounted yet, show nothing (Prevents Error 418)
   if (!mounted) return null;
 
-  if (!inRoom) return (
+  return (
     <div className="join-screen">
       <div className="glass-panel">
         <h1>Ghost Chat 👻</h1>
-        <div className={`status-pill ${connStatus.server ? 'online' : 'offline'}`}>
-          {connStatus.server ? "🟢 Server Online" : "🔴 Connecting to Render..."}
-        </div>
-        <form onSubmit={joinRoom} className="join-form">
-          <input type="text" placeholder="Name" value={userName} onChange={e => setUserName(e.target.value)} required />
-          <input type="text" placeholder="Room ID" value={roomId} onChange={e => setRoomId(e.target.value.toUpperCase())} required />
-          <button type="submit" disabled={!connStatus.server}>Enter Shadows</button>
-        </form>
+        <p>Status: {connStatus.server ? "🟢 Online" : "🔴 Connecting..."}</p>
+        <button disabled={!connStatus.server} className="primary-btn">
+          {connStatus.server ? "Enter Shadows" : "Waiting for Server..."}
+        </button>
       </div>
-    </div>
-  );
-
-  return (
-    <div className="chat-layout">
-      <div className="status-bar">
-        <span>Server: {connStatus.server ? "🟢" : "🔴"}</span>
-        <span>Room: {roomId}</span>
-      </div>
-      <div className="messages-area">
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.isMine ? 'mine' : 'theirs'}`}>
-            <p>{m.text}</p>
-          </div>
-        ))}
-      </div>
-      <form onSubmit={sendTextMessage} className="compose">
-        <input value={inputMessage} onChange={e => setInputMessage(e.target.value)} />
-        <button type="submit">Send</button>
-      </form>
     </div>
   );
 }
