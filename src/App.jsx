@@ -7,8 +7,10 @@ import './App.css';
 const RENDER_URL = 'https://ghost-chat-backend-vkcz.onrender.com';
 
 const socket = io(RENDER_URL, { 
-  transports: ['websocket', 'polling'],
-  withCredentials: true 
+  transports: ['websocket', 'polling'], // Try websocket first, then fallback
+  withCredentials: true,
+  reconnectionAttempts: 5,
+  timeout: 10000,
 });
 function App() {
   const [inRoom, setInRoom] = useState(false);
