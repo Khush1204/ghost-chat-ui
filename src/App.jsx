@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Peer from 'peerjs';
-import { Send, Video, Phone, Shield } from 'lucide-react';
+import { Send, Activity, Shield } from 'lucide-react';
 import './App.css';
 
 const RENDER_URL = 'https://ghost-chat-backend-vkcz.onrender.com';
-
-// 1. Initialize Socket OUTSIDE the component to ensure it's a singleton
-let socket;
+let socket; // Keep this outside to prevent multiple connections
 
 function App() {
-  const [hasLoaded, setHasLoaded] = useState(false); // The "Hydration Shield"
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [inRoom, setInRoom] = useState(false);
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
@@ -21,20 +19,20 @@ function App() {
   const peerInstance = useRef(null);
 
   useEffect(() => {
-    // 2. Kill Error #418: Only execute this once we are safely in the browser
-    setHasLoaded(true);
+    setHasLoaded(true); // Forces the app to wait for the browser
 
     if (!socket) {
       socket = io(RENDER_URL, {
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'], // 🟢 Polling first to bypass ISP blocks
         withCredentials: true,
-        autoConnect: true
+        forceNew: true,
+        reconnectionAttempts: 10
       });
-      window.socket = socket; // Now it will EXIST in your console
+      window.socket = socket; // For your console debugging
     }
 
     const onConnect = () => {
-      console.log("🟢 SYSTEM: LINK ESTABLISHED");
+      console.log("🟢 GHOST SERVER LINKED");
       setConnStatus(prev => ({ ...prev, server: true }));
     };
 
@@ -53,6 +51,7 @@ function App() {
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('receive-message');
     };
   }, [userName]);
 
@@ -61,10 +60,10 @@ function App() {
     if (!userName.trim() || !roomId.trim()) return;
     setInRoom(true);
     
-    // PeerJS Init
     const peer = new Peer({
       config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
     });
+    
     peer.on('open', (id) => {
       setConnStatus(prev => ({ ...prev, peer: true }));
       socket.emit('join-room', { roomId, peerId: id, userName });
@@ -79,7 +78,7 @@ function App() {
     setInputMessage('');
   };
 
-  // CRITICAL: This prevents the Vercel/React #418 crash
+  // 🛡 THE HYDRATION SHIELD (Kills Error #418)
   if (!hasLoaded) return null;
 
   if (!inRoom) return (
@@ -87,12 +86,12 @@ function App() {
       <div className="glass-panel">
         <h1>Ghost Chat 👻</h1>
         <p className={connStatus.server ? "status-online" : "status-offline"}>
-          {connStatus.server ? "🟢 System Ready" : "🔴 Connecting to Shadow Server..."}
+          {connStatus.server ? "🟢 Server Live" : "🔴 Reaching through the void..."}
         </p>
         <form onSubmit={joinRoom} className="join-form">
-          <input type="text" placeholder="Identity" value={userName} onChange={e => setUserName(e.target.value)} required />
+          <input type="text" placeholder="Your Ghost Name" value={userName} onChange={e => setUserName(e.target.value)} required />
           <input type="text" placeholder="Room ID" value={roomId} onChange={e => setRoomId(e.target.value.toUpperCase())} required />
-          <button type="submit" disabled={!connStatus.server} className="primary-btn">JOIN SHADOWS</button>
+          <button type="submit" disabled={!connStatus.server} className="primary-btn">ENTER SHADOWS</button>
         </form>
       </div>
     </div>
@@ -100,21 +99,24 @@ function App() {
 
   return (
     <div className="chat-layout">
-      <div className="status-bar">
-        <span>Server: {connStatus.server ? "🟢" : "🔴"}</span>
-        <span>Room: <b>{roomId}</b></span>
-      </div>
-      <div className="messages-area">
-        {messages.map((m, i) => (
-          <div key={i} className={`message-wrapper ${m.isMine ? 'mine' : 'theirs'}`}>
-            <div className="bubble"><p>{m.text}</p></div>
-          </div>
-        ))}
-      </div>
-      <form onSubmit={sendTextMessage} className="compose-area">
-        <input type="text" value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="Type message..." />
-        <button type="submit"><Send size={20}/></button>
-      </form>
+        <div className="status-bar">
+            <span>Server: {connStatus.server ? "🟢" : "🔴"}</span>
+            <span>Room: <b>{roomId}</b></span>
+        </div>
+        <div className="messages-area">
+            {messages.map((m, i) => (
+                <div key={i} className={`msg-wrap ${m.isMine ? 'mine' : 'theirs'}`}>
+                    <div className="bubble">
+                        {!m.isMine && <small>{m.senderName}</small>}
+                        <p>{m.text}</p>
+                    </div>
+                </div>
+            ))}
+        </div>
+        <form onSubmit={sendTextMessage} className="compose">
+            <input type="text" value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="Type a message..." />
+            <button type="submit"><Send size={18}/></button>
+        </form>
     </div>
   );
 }
