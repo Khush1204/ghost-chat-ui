@@ -1,58 +1,123 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Peer from 'peerjs';
-import { Send } from 'lucide-react';
+import { Send, Video, Mic, MessageSquare, Shield, Activity } from 'lucide-react';
 import './App.css';
 
 const RENDER_URL = 'https://ghost-chat-backend-vkcz.onrender.com';
+let socket; 
 
 function App() {
-  const [isClient, setIsClient] = useState(false); // 🛡️ Hydration Shield
+  const [isClient, setIsClient] = useState(false);
+  const [inRoom, setInRoom] = useState(false);
+  const [roomId, setRoomId] = useState('');
+  const [userName, setUserName] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [inputMessage, setInputMessage] = useState('');
   const [connStatus, setConnStatus] = useState({ server: false, peer: false });
+
   const socketRef = useRef(null);
+  const peerInstance = useRef(null);
 
   useEffect(() => {
-    setIsClient(true); // Now we are safely in the browser
+    setIsClient(true); 
 
-    if (!socketRef.current) {
-      socketRef.current = io(RENDER_URL, {
-        transports: ['polling', 'websocket'], // Polling first for ISP stability
+    if (!socket) {
+      socket = io(RENDER_URL, {
+        transports: ['polling', 'websocket'],
         withCredentials: true,
       });
-
-      // Attach to window so you can finally use the console
-      window.socket = socketRef.current;
-
-      socketRef.current.on('connect', () => {
-        setConnStatus(prev => ({ ...prev, server: true }));
-      });
-
-      socketRef.current.on('disconnect', () => {
-        setConnStatus(prev => ({ ...prev, server: false }));
-      });
+      socketRef.current = socket;
+      window.socket = socket;
     }
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.off('connect');
-        socketRef.current.off('disconnect');
-      }
-    };
-  }, []);
+    socket.on('connect', () => setConnStatus(prev => ({ ...prev, server: true })));
+    socket.on('disconnect', () => setConnStatus(prev => ({ ...prev, server: false })));
+    
+    socket.on('receive-message', (data) => {
+      setMessages(prev => [...prev, { ...data, isMine: data.senderName === userName }]);
+    });
 
-  // If we are still on the "Server" side, show nothing. 
-  // This prevents Error #418 completely.
+    return () => {
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('receive-message');
+    };
+  }, [userName]);
+
+  const joinRoom = (e) => {
+    e.preventDefault();
+    if (!userName.trim() || !roomId.trim()) return;
+    setInRoom(true);
+
+    // RESTORE: PeerJS Logic for Video/Audio signaling
+    const peer = new Peer({
+      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+    });
+
+    peer.on('open', (id) => {
+      setConnStatus(prev => ({ ...prev, peer: true }));
+      socket.emit('join-room', { roomId, peerId: id, userName });
+    });
+
+    peerInstance.current = peer;
+  };
+
+  const sendTextMessage = (e) => {
+    e.preventDefault();
+    if (!inputMessage.trim()) return;
+    socket.emit('send-message', { roomId, text: inputMessage, senderName: userName });
+    setInputMessage('');
+  };
+
   if (!isClient) return null;
 
-  return (
+  if (!inRoom) return (
     <div className="join-screen">
       <div className="glass-panel">
-        <h1>Ghost Chat 👻</h1>
-        <p>Status: {connStatus.server ? "🟢 Online" : "🔴 Connecting..."}</p>
-        <button disabled={!connStatus.server} className="primary-btn">
-          {connStatus.server ? "Enter Shadows" : "Waiting for Server..."}
-        </button>
+        <div className="logo-area">
+          <Shield className="glow-icon" size={40} />
+          <h1>GHOST CHAT</h1>
+        </div>
+        <div className={`status-tag ${connStatus.server ? 'online' : 'offline'}`}>
+          <Activity size={14} /> {connStatus.server ? "SECURE LINK ACTIVE" : "ESTABLISHING ENCRYPTION..."}
+        </div>
+        <form onSubmit={joinRoom} className="join-form">
+          <input type="text" placeholder="GHOST IDENTITY" value={userName} onChange={e => setUserName(e.target.value)} required />
+          <input type="text" placeholder="ROOM SECURE ID" value={roomId} onChange={e => setRoomId(e.target.value.toUpperCase())} required />
+          <button type="submit" disabled={!connStatus.server} className="glow-button">INITIALIZE SESSION</button>
+        </form>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="chat-layout">
+      <header className="chat-header">
+        <div className="room-info">
+          <MessageSquare size={18} /> <span>ROOM: <b>{roomId}</b></span>
+        </div>
+        <div className="actions">
+          <button className="icon-btn"><Video size={20} /></button>
+          <button className="icon-btn"><Mic size={20} /></button>
+        </div>
+      </header>
+
+      <div className="messages-container">
+        {messages.map((m, i) => (
+          <div key={i} className={`msg-block ${m.isMine ? 'mine' : 'theirs'}`}>
+            <div className="msg-bubble">
+              {!m.isMine && <span className="sender-label">{m.senderName}</span>}
+              <p>{m.text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <form onSubmit={sendTextMessage} className="input-dock">
+        <input type="text" value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="Transmit data..." />
+        <button type="submit" className="send-trigger"><Send size={20}/></button>
+      </form>
     </div>
   );
 }
