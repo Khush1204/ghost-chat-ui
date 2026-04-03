@@ -1,123 +1,151 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Peer from 'peerjs';
-import { Send, Video, Mic, MessageSquare, Shield, Activity } from 'lucide-react';
+import { Send, Video, Mic, MicOff, VideoOff, PhoneOff, MonitorUp, Users, Smile } from 'lucide-react';
 import './App.css';
 
 const RENDER_URL = 'https://ghost-chat-backend-vkcz.onrender.com';
-let socket; 
+let socket;
 
 function App() {
   const [isClient, setIsClient] = useState(false);
   const [inRoom, setInRoom] = useState(false);
-  const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
+  const [roomId, setRoomId] = useState('');
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
-  const [connStatus, setConnStatus] = useState({ server: false, peer: false });
+  const [users, setUsers] = useState([]); // List for the Left Panel
+  const [myStream, setMyStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [callType, setCallType] = useState(null); // 'voice', 'video', or null
+  const [isMuted, setIsMuted] = useState(false);
 
-  const socketRef = useRef(null);
+  const myVideo = useRef();
+  const remoteVideo = useRef();
   const peerInstance = useRef(null);
 
   useEffect(() => {
-    setIsClient(true); 
-
+    setIsClient(true);
     if (!socket) {
-      socket = io(RENDER_URL, {
-        transports: ['polling', 'websocket'],
-        withCredentials: true,
-      });
-      socketRef.current = socket;
-      window.socket = socket;
+      socket = io(RENDER_URL, { transports: ['polling', 'websocket'], withCredentials: true });
     }
 
-    socket.on('connect', () => setConnStatus(prev => ({ ...prev, server: true })));
-    socket.on('disconnect', () => setConnStatus(prev => ({ ...prev, server: false })));
+    socket.on('user-list', (userList) => setUsers(userList));
     
     socket.on('receive-message', (data) => {
-      setMessages(prev => [...prev, { ...data, isMine: data.senderName === userName }]);
+      setMessages(prev => [...prev, data]);
     });
 
-    return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('receive-message');
-    };
-  }, [userName]);
+    socket.on('sys-notification', (text) => {
+      setMessages(prev => [...prev, { type: 'system', text }]);
+    });
+
+    return () => socket.off();
+  }, []);
+
+  const initMedia = async (video = true) => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video, audio: true });
+    setMyStream(stream);
+    if (myVideo.current) myVideo.current.srcObject = stream;
+    return stream;
+  };
 
   const joinRoom = (e) => {
     e.preventDefault();
-    if (!userName.trim() || !roomId.trim()) return;
+    if (!userName || !roomId) return;
     setInRoom(true);
-
-    // RESTORE: PeerJS Logic for Video/Audio signaling
-    const peer = new Peer({
-      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+    
+    const peer = new Peer();
+    peer.on('open', (id) => {
+      socket.emit('join-room', { roomId, userName, peerId: id });
     });
 
-    peer.on('open', (id) => {
-      setConnStatus(prev => ({ ...prev, peer: true }));
-      socket.emit('join-room', { roomId, peerId: id, userName });
+    peer.on('call', async (call) => {
+      const stream = await initMedia(call.options.metadata.type === 'video');
+      call.answer(stream);
+      call.on('stream', (rStream) => setRemoteStream(rStream));
     });
 
     peerInstance.current = peer;
   };
 
-  const sendTextMessage = (e) => {
-    e.preventDefault();
-    if (!inputMessage.trim()) return;
-    socket.emit('send-message', { roomId, text: inputMessage, senderName: userName });
-    setInputMessage('');
+  const toggleMute = () => {
+    myStream.getAudioTracks()[0].enabled = !isMuted;
+    setIsMuted(!isMuted);
+  };
+
+  const shareScreen = async () => {
+    const screenStream = await navigator.mediaDevices.getDisplayMedia({ cursor: true });
+    myVideo.current.srcObject = screenStream;
+    // Update logic to replace track in peer call here
   };
 
   if (!isClient) return null;
 
   if (!inRoom) return (
-    <div className="join-screen">
-      <div className="glass-panel">
-        <div className="logo-area">
-          <Shield className="glow-icon" size={40} />
-          <h1>GHOST CHAT</h1>
-        </div>
-        <div className={`status-tag ${connStatus.server ? 'online' : 'offline'}`}>
-          <Activity size={14} /> {connStatus.server ? "SECURE LINK ACTIVE" : "ESTABLISHING ENCRYPTION..."}
-        </div>
-        <form onSubmit={joinRoom} className="join-form">
-          <input type="text" placeholder="GHOST IDENTITY" value={userName} onChange={e => setUserName(e.target.value)} required />
-          <input type="text" placeholder="ROOM SECURE ID" value={roomId} onChange={e => setRoomId(e.target.value.toUpperCase())} required />
-          <button type="submit" disabled={!connStatus.server} className="glow-button">INITIALIZE SESSION</button>
+    <div className="welcome-gate">
+      <div className="auth-card">
+        <h1 className="glitch-text">GHOST_INTEL</h1>
+        <form onSubmit={joinRoom}>
+          <input type="text" placeholder="GHOST_ID" onChange={e => setUserName(e.target.value)} required />
+          <input type="text" placeholder="SECURE_ROOM" onChange={e => setRoomId(e.target.value.toUpperCase())} required />
+          <button type="submit" className="neon-btn">INITIALIZE</button>
         </form>
       </div>
     </div>
   );
 
   return (
-    <div className="chat-layout">
-      <header className="chat-header">
-        <div className="room-info">
-          <MessageSquare size={18} /> <span>ROOM: <b>{roomId}</b></span>
+    <div className="app-container">
+      {/* 5. Left Panel: User List */}
+      <aside className="side-bar">
+        <h3><Users size={18} /> OPERATIVES</h3>
+        <div className="user-list">
+          {users.map((u, i) => (
+            <div key={i} className="user-item">
+              <span className={`status-dot ${u.online ? 'on' : 'off'}`}></span>
+              {u.name} {u.name === userName && "(You)"}
+            </div>
+          ))}
         </div>
-        <div className="actions">
-          <button className="icon-btn"><Video size={20} /></button>
-          <button className="icon-btn"><Mic size={20} /></button>
-        </div>
-      </header>
+      </aside>
 
-      <div className="messages-container">
-        {messages.map((m, i) => (
-          <div key={i} className={`msg-block ${m.isMine ? 'mine' : 'theirs'}`}>
-            <div className="msg-bubble">
-              {!m.isMine && <span className="sender-label">{m.senderName}</span>}
-              <p>{m.text}</p>
+      <main className="chat-area">
+        {/* 6, 7, 8. Call Interface */}
+        {myStream && (
+          <div className="media-bridge">
+            <video ref={myVideo} autoPlay muted className="mini-cam" />
+            {remoteStream && <video ref={remoteVideo} autoPlay className="main-cam" />}
+            <div className="call-controls">
+              <button onClick={toggleMute}>{isMuted ? <MicOff /> : <Mic />}</button>
+              <button onClick={shareScreen}><MonitorUp /></button>
+              <button className="hangup" onClick={() => window.location.reload()}><PhoneOff /></button>
             </div>
           </div>
-        ))}
-      </div>
+        )}
 
-      <form onSubmit={sendTextMessage} className="input-dock">
-        <input type="text" value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="Transmit data..." />
-        <button type="submit" className="send-trigger"><Send size={20}/></button>
-      </form>
+        <div className="message-log">
+          {messages.map((m, i) => (
+            <div key={i} className={`msg-row ${m.type === 'system' ? 'center' : (m.sender === userName ? 'right' : 'left')}`}>
+              <div className="msg-content">
+                {m.type !== 'system' && <small>{m.sender}</small>}
+                <p>{m.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 4. Stickers & Input */}
+        <form className="input-dock" onSubmit={(e) => {
+          e.preventDefault();
+          socket.emit('send-message', { roomId, text: inputMessage, sender: userName });
+          setInputMessage('');
+        }}>
+          <button type="button" className="sticker-btn"><Smile /></button>
+          <input value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="Enter encrypted data..." />
+          <button type="submit" className="send-btn"><Send /></button>
+        </form>
+      </main>
     </div>
   );
 }
