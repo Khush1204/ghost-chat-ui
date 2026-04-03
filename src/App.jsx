@@ -4,8 +4,8 @@ import Peer from 'peerjs';
 import { Send, Video, Phone, MonitorUp, VideoOff, MicOff, Users } from 'lucide-react';
 import './App.css';
 
-// Change this line to your NEW Render link:
-const socket = io('https://your-new-render-link.onrender.com', {
+// Replace the placeholder with your REAL Render link:
+const socket = io('https://PUT-YOUR-REAL-LINK-HERE.onrender.com', {
   transports: ['websocket', 'polling']
 });
 
