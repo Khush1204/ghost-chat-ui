@@ -5,10 +5,12 @@ import { Send, Users } from 'lucide-react';
 import './App.css';
 
 // ⚠️ REPLACE THIS WITH YOUR ACTUAL RENDER URL FROM THE DASHBOARD
-const RENDER_URL = 'https://YOUR_NEW_RENDER_URL.onrender.com';
+const RENDER_URL = 'https:ghost-chat-backend-vkcz.onrender.com';
 
-const socket = io(RENDER_URL, { transports: ['websocket', 'polling'] });
-
+const socket = io(RENDER_URL, { 
+  transports: ['websocket', 'polling'],
+  withCredentials: true // 👈 Add this line!
+});
 function App() {
   const [inRoom, setInRoom] = useState(false);
   const [roomId, setRoomId] = useState('');
