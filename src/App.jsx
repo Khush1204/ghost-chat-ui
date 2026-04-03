@@ -71,7 +71,6 @@ function App() {
     e.preventDefault();
     if (!userName || !roomId) return;
     
-    // Add yourself to the operative list locally first
     setOperatives([{ id: 'me', name: userName }]);
     setInRoom(true);
     
@@ -82,9 +81,22 @@ function App() {
       socket.emit('join-room', { roomId, userName, peerId: id });
     });
 
-    // Answer incoming calls
+    // 1. Answer incoming calls from existing users
     peer.on('call', (call) => {
       call.answer(stream);
+      call.on('stream', (rStream) => {
+        setRemoteStream(rStream);
+        if (remoteVideo.current) remoteVideo.current.srcObject = rStream;
+      });
+    });
+
+    // 2. CRITICAL FIX: Make an outgoing call when a NEW user joins
+    socket.on('user-joined', (data) => {
+      setOperatives(prev => [...prev, { id: data.peerId, name: data.senderName }]);
+      setMessages(prev => [...prev, { type: 'system', text: `${data.senderName} entered the chat.` }]);
+      
+      // Call them and send our stream
+      const call = peer.call(data.peerId, stream);
       call.on('stream', (rStream) => {
         setRemoteStream(rStream);
         if (remoteVideo.current) remoteVideo.current.srcObject = rStream;
@@ -94,18 +106,20 @@ function App() {
     peerInstance.current = peer;
   };
 
-  // 3. HARDWARE CONTROLS
+  // 3. FIXED HARDWARE CONTROLS
   const toggleMute = () => {
     if (myStream) {
-      myStream.getAudioTracks()[0].enabled = isMuted;
-      setIsMuted(!isMuted);
+      const newMutedState = !isMuted;
+      myStream.getAudioTracks()[0].enabled = !newMutedState;
+      setIsMuted(newMutedState);
     }
   };
 
   const toggleCam = () => {
     if (myStream) {
-      myStream.getVideoTracks()[0].enabled = isCamOff;
-      setIsCamOff(!isCamOff);
+      const newCamState = !isCamOff;
+      myStream.getVideoTracks()[0].enabled = !newCamState;
+      setIsCamOff(newCamState);
     }
   };
 
