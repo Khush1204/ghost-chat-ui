@@ -5,9 +5,10 @@ import { Send, Users } from 'lucide-react';
 import './App.css';
 
 const RENDER_URL = 'https://ghost-chat-backend-vkcz.onrender.com';
+
 const socket = io(RENDER_URL, { 
   transports: ['websocket', 'polling'],
-  withCredentials: true // 👈 Add this line!
+  withCredentials: true 
 });
 function App() {
   const [inRoom, setInRoom] = useState(false);
